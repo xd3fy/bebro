@@ -29,13 +29,17 @@ LEADERBOARD_CHANNEL_ID = 1363552844799676617
 # Commission: 5% fee on total pot
 COMMISSION_RATE = 0.05
 
+from urllib.parse import urlparse
+
+url = urlparse(os.environ["DATABASE_URL"])
 DB_CONFIG = {
-  "user": os.environ["DB_USER"],
-  "password": os.environ["DB_PASSWORD"],
-  "database": os.environ["DB_NAME"],
-  "host": os.environ["DB_HOST"],
-  "port": int(os.environ["DB_PORT"])
+    "user": url.username,
+    "password": url.password,
+    "host": url.hostname,
+    "port": url.port,
+    "database": url.path.lstrip("/"),
 }
+
 
 
 # ---------- Bot & DB Pool ----------

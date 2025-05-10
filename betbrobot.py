@@ -3,14 +3,7 @@ import os
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN env var not found!")
-    
-DB_CONFIG = {
-  "user": os.environ["DB_USER"],
-  "password": os.environ["DB_PASSWORD"],
-  "database": os.environ["DB_NAME"],
-  "host": os.environ["DB_HOST"],
-  "port": int(os.environ["DB_PORT"])
-}
+
 
 
 import asyncio
@@ -37,10 +30,10 @@ LEADERBOARD_CHANNEL_ID = 1363552844799676617
 COMMISSION_RATE = 0.05
 
 DB_CONFIG = {
-    "user": "dbuser",
-    "password": "dbpass",
-    "database": "betbro",
-    "host": "127.0.0.1",
+    "user": "postgres",
+    "password": "dtsrLykiKwImdWqRzJnUELFOgCKKLnLU",
+    "database": "railway",
+    "host": "postgres.railway.internal",
     "port": 5432
 }
 

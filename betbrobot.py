@@ -61,13 +61,6 @@ def get_stats_rank(wins: int, coins: float) -> str:
     return "Rookie"
 
 # ---------- Events ----------
-@bot.event
-async def on_ready():
-    global db_pool
-    db_pool = await asyncpg.create_pool(**DB_CONFIG)
-    periodic_reminders.start()
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"Logged in as {bot.user}")
 
 # ---------- Role-Rank Parser (/rank-logs) ----------
 @bot.event
@@ -369,4 +362,13 @@ def main():
 if __name__ == '__main__':
     main()
     
+@bot.event
+async def on_ready():
+    global db_pool
+    db_pool = await asyncpg.create_pool(**DB_CONFIG)
+    periodic_reminders.start()
+    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+    print(f"Logged in as {bot.user}")
+
+
 bot.run(TOKEN)

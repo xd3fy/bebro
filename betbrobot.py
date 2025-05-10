@@ -30,12 +30,13 @@ LEADERBOARD_CHANNEL_ID = 1363552844799676617
 COMMISSION_RATE = 0.05
 
 DB_CONFIG = {
-    "user": "postgres",
-    "password": "dtsrLykiKwImdWqRzJnUELFOgCKKLnLU",
-    "database": "railway",
-    "host": "postgres.railway.internal",
-    "port": 5432
+  "user": os.environ["DB_USER"],
+  "password": os.environ["DB_PASSWORD"],
+  "database": os.environ["DB_NAME"],
+  "host": os.environ["DB_HOST"],
+  "port": int(os.environ["DB_PORT"])
 }
+
 
 # ---------- Bot & DB Pool ----------
 intents = discord.Intents.all()

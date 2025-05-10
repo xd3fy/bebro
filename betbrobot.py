@@ -3,6 +3,15 @@ import os
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN env var not found!")
+    
+DB_CONFIG = {
+  "user": os.environ["DB_USER"],
+  "password": os.environ["DB_PASSWORD"],
+  "database": os.environ["DB_NAME"],
+  "host": os.environ["DB_HOST"],
+  "port": int(os.environ["DB_PORT"])
+}
+
 
 import asyncio
 import random

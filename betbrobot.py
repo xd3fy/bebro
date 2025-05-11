@@ -12,7 +12,7 @@ import asyncpg
 from aiohttp import web
 
 # ---------- Configuration ----------
-TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_BOT_TOKEN")
+TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", 123456789012345678))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 1359211270099829038))
 MOD_RESULTS_CHANNEL_ID = int(os.getenv("MOD_RESULTS_CHANNEL_ID", 1359211291612545215))

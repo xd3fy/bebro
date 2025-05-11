@@ -12,41 +12,48 @@ import asyncpg
 from aiohttp import web
 
 # ---------- Configuration ----------
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_DISCORD_BOT_TOKEN")
+APPLICATION_ID = int(os.getenv("APPLICATION_ID", 123456789012345678))  # Your bot's application (client) ID
 GUILD_ID = int(os.getenv("GUILD_ID", 123456789012345678))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 1359211270099829038))
 MOD_RESULTS_CHANNEL_ID = int(os.getenv("MOD_RESULTS_CHANNEL_ID", 1359211291612545215))
 CONFIRM_CHANNEL_ID = int(os.getenv("CONFIRM_CHANNEL_ID", 1360200193282412625))
 LEADERBOARD_CHANNEL_ID = int(os.getenv("LEADERBOARD_CHANNEL_ID", 1359300000000000000))
 
+# Commission: 5% fee on total pot
 COMMISSION_RATE = 0.05
 
-# Database config (parsed from DATABASE_URL or separate envs)
+# Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     from urllib.parse import urlparse
-    url = urlparse(DATABASE_URL)
+    _u = urlparse(DATABASE_URL)
     DB_CONFIG = {
-        "user": url.username,
-        "password": url.password,
-        "database": url.path.lstrip("/"),
-        "host": url.hostname,
-        "port": url.port,
+        "user": _u.username,
+        "password": _u.password,
+        "database": _u.path.lstrip('/'),
+        "host": _u.hostname,
+        "port": _u.port,
     }
 else:
     DB_CONFIG = {
-        "user": os.environ["DB_USER"],
-        "password": os.environ["DB_PASSWORD"],
-        "database": os.environ["DB_NAME"],
-        "host": os.environ["DB_HOST"],
-        "port": int(os.environ["DB_PORT"]),
+        "user": os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD"),
+        "database": os.getenv("DB_NAME"),
+        "host": os.getenv("DB_HOST"),
+        "port": int(os.getenv("DB_PORT", 5432)),
     }
 
+# ---------- Bot & Database ----------
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents,
+    application_id=APPLICATION_ID
+)
 db_pool: asyncpg.Pool
 
-# ---------- Helpers ----------
+# ---------- Helper Functions ----------
 def generate_wager_id() -> str:
     return "WGR-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
@@ -59,14 +66,25 @@ def get_stats_rank(wins: int, coins: float) -> str:
         return "Hustler"
     return "Rookie"
 
-# ---------- Role-log Parser ----------
+# ---------- Events ----------
+@bot.event
+async def on_ready():
+    # Sync commands once ready
+    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+    print(f"✅ Logged in as {bot.user}")
+
 @bot.event
 async def on_message(message: discord.Message):
-    # only parse #rank-logs for role changes, after commands are processed
+    # Process slash commands
+    await bot.process_commands(message)
+
+    # Role-logs parser
     if message.channel.name == "rank-logs" and not message.author.bot:
         import re
-        pattern = (r"<@!?(\\d+)>\\s+(N/A|R[1-9]|R10)(?:\\s+(low|mid|high))?"
-                   r"\\s+to\\s+(N/A|R[1-9]|R10)(?:\\s+(low|mid|high))?")
+        pattern = (
+            r"<@!?(\d+)>\s+(N/A|R[1-9]|R10)(?:\s+(low|mid|high))?"
+            r"\s+to\s+(N/A|R[1-9]|R10)(?:\s+(low|mid|high))?"
+        )
         m = re.match(pattern, message.content, re.IGNORECASE)
         if m:
             uid, pr, pt, nr, nt = m.groups()
@@ -75,33 +93,30 @@ async def on_message(message: discord.Message):
             member = message.guild.get_member(int(uid))
             async with db_pool.acquire() as conn:
                 rec = await conn.fetchrow(
-                    "SELECT rank,tier FROM user_ranks WHERE user_id=$1", int(uid)
+                    'SELECT rank,tier FROM user_ranks WHERE user_id=$1', int(uid)
                 )
-                cur_rank, cur_tier = (rec["rank"], rec["tier"]) if rec else ("N/A","none")
+                cur_rank, cur_tier = (rec['rank'], rec['tier']) if rec else ('N/A','none')
                 if cur_rank != pr or cur_tier != pt:
                     await message.channel.send(
                         f"❌ <@{uid}> has {cur_rank} {cur_tier}, not {pr} {pt}."
                     )
                 else:
-                    # update Discord roles
-                    if pr != "N/A":
+                    # Update Discord roles
+                    if pr != 'N/A':
                         old_r = discord.utils.get(message.guild.roles, name=pr)
                         old_t = discord.utils.get(message.guild.roles, name=pt)
                         await member.remove_roles(*(r for r in (old_r, old_t) if r))
-                    if nr != "N/A":
+                    if nr != 'N/A':
                         new_r = discord.utils.get(message.guild.roles, name=nr)
                         new_t = discord.utils.get(message.guild.roles, name=nt)
                         await member.add_roles(*(r for r in (new_r, new_t) if r))
-                    # persist
+                    # Persist to DB
                     await conn.execute(
-                        "INSERT INTO user_ranks(user_id,rank,tier) VALUES($1,$2,$3) "
-                        "ON CONFLICT(user_id) DO UPDATE SET rank=$2,tier=$3",
+                        'INSERT INTO user_ranks(user_id,rank,tier) VALUES($1,$2,$3) '
+                        'ON CONFLICT(user_id) DO UPDATE SET rank=$2,tier=$3',
                         int(uid), nr, nt
                     )
                     await message.channel.send(f"✅ Updated <@{uid}> to {nr} {nt}.")
-
-    # allow slash commands to work
-    await bot.process_commands(message)
 
 # ---------- Periodic Reminders ----------
 @tasks.loop(minutes=30)
@@ -110,11 +125,12 @@ async def periodic_reminders():
         rows = await conn.fetch(
             "SELECT w.wager_id,w.p1_id,w.p2_id,w.amount_usd FROM wagers w "
             "JOIN payments p ON w.wager_id=p.wager_id "
-            "WHERE w.status='pending' GROUP BY w.wager_id,w.p1_id,w.p2_id,w.amount_usd "
+            "WHERE w.status='pending' "
+            "GROUP BY w.wager_id,w.p1_id,w.p2_id,w.amount_usd "
             "HAVING bool_and(p.paid)=FALSE"
         )
         for r in rows:
-            for uid in (r["p1_id"], r["p2_id"]):
+            for uid in (r['p1_id'], r['p2_id']):
                 user = bot.get_user(uid)
                 if user:
                     await user.send(
@@ -124,16 +140,16 @@ async def periodic_reminders():
 # ---------- PayPal IPN Webhook ----------
 async def handle_ipn(request):
     data = await request.post()
-    if data.get("payment_status") == "Completed":
-        wid = data.get("invoice")
-        pid = int(data.get("custom", 0))
+    if data.get('payment_status') == 'Completed':
+        wid = data.get('invoice')
+        pid = int(data.get('custom', 0))
         async with db_pool.acquire() as conn:
             await conn.execute(
-                "UPDATE payments SET paid=TRUE WHERE wager_id=$1 AND user_id=$2",
+                'UPDATE payments SET paid=TRUE WHERE wager_id=$1 AND user_id=$2',
                 wid, pid
             )
             cnt = await conn.fetchval(
-                "SELECT COUNT(*) FROM payments WHERE wager_id=$1 AND paid=TRUE",
+                'SELECT COUNT(*) FROM payments WHERE wager_id=$1 AND paid=TRUE',
                 wid
             )
             if cnt == 2:
@@ -146,9 +162,9 @@ async def handle_ipn(request):
     return web.Response(status=200)
 
 app = web.Application()
-app.router.add_post("/paypal/ipn", handle_ipn)
+app.router.add_post('/paypal/ipn', handle_ipn)
 
-# ---------- Slash Commands / Views ----------
+# ---------- Slash Commands & Views ----------
 class RiskConfirm(discord.ui.View):
     def __init__(self, wid: str, pid: int):
         super().__init__(timeout=300)
@@ -157,32 +173,34 @@ class RiskConfirm(discord.ui.View):
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            if interaction.user.id != self.pid:
-                return await interaction.response.send_message("Not for you.", ephemeral=True)
-            async with db_pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE payments SET paid=TRUE WHERE wager_id=$1 AND user_id=$2",
-                    self.wid, self.pid
-                )
-            await interaction.response.send_message("Accepted. Use /confirmwager.", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message("❌ Error processing acceptance.", ephemeral=True)
-            raise
+        if interaction.user.id != self.pid:
+            return await interaction.response.send_message("Not for you.", ephemeral=True)
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                'UPDATE payments SET paid=TRUE WHERE wager_id=$1 AND user_id=$2',
+                self.wid, self.pid
+            )
+        await interaction.response.send_message("Accepted. Use /confirmwager.", ephemeral=True)
 
 @bot.tree.command(name="wager", description="Start a risk wager.")
 @app_commands.describe(opponent="Opponent", amount="USD amount", link="Game link")
-async def wager_cmd(interaction: discord.Interaction, opponent: discord.Member, amount: float, link: str):
+async def wager_cmd(
+    interaction: discord.Interaction,
+    opponent: discord.Member,
+    amount: float,
+    link: str
+):
     try:
         wid = generate_wager_id()
         async with db_pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO wagers(wager_id,host_id,p1_id,p2_id,amount_usd,is_supervised,status) "
-                "VALUES($1,$2,$3,$4,$5,$6,$7)",
-                wid, interaction.user.id, interaction.user.id, opponent.id, amount, False, "pending"
+                'INSERT INTO wagers(wager_id,host_id,p1_id,p2_id,amount_usd,is_supervised,status) '
+                'VALUES($1,$2,$3,$4,$5,$6,$7)',
+                wid, interaction.user.id, interaction.user.id, opponent.id,
+                amount, False, 'pending'
             )
             await conn.executemany(
-                "INSERT INTO payments(wager_id,user_id) VALUES($1,$2)",
+                'INSERT INTO payments(wager_id,user_id) VALUES($1,$2)',
                 [(wid, interaction.user.id), (wid, opponent.id)]
             )
         embed = discord.Embed(title="Risk Wager Invite", color=discord.Color.blurple())
@@ -198,14 +216,21 @@ async def wager_cmd(interaction: discord.Interaction, opponent: discord.Member, 
         await interaction.response.send_message("❌ Failed to create wager.", ephemeral=True)
 
 @bot.tree.command(name="confirmwager", description="Confirm risk wager funding.")
-async def confirmwager(interaction: discord.Interaction, wager_id: str):
+async def confirmwager(
+    interaction: discord.Interaction,
+    wager_id: str
+):
     try:
         async with db_pool.acquire() as conn:
             cnt = await conn.fetchval(
-                "SELECT COUNT(*) FROM payments WHERE wager_id=$1 AND paid=TRUE", wager_id
+                'SELECT COUNT(*) FROM payments WHERE wager_id=$1 AND paid=TRUE',
+                wager_id
             )
             if cnt == 2:
-                await conn.execute("UPDATE wagers SET status='paid' WHERE wager_id=$1", wager_id)
+                await conn.execute(
+                    'UPDATE wagers SET status="paid" WHERE wager_id=$1',
+                    wager_id
+                )
                 c = bot.get_channel(CONFIRM_CHANNEL_ID)
                 if c:
                     await c.send(f"💵 Risk wager {wager_id} funded!")
@@ -421,23 +446,19 @@ async def leaderboard(interaction: discord.Interaction, type: str):
     except Exception:
         await interaction.response.send_message("❌ Error posting leaderboard.", ephemeral=True)
 
-# ---------- Startup ----------
+# ---------- Run ----------
 async def start_webserver():
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
 
 async def main():
     global db_pool
     db_pool = await asyncpg.create_pool(**DB_CONFIG)
-    # kick off webhook server
     asyncio.create_task(start_webserver())
-    # start reminders
     periodic_reminders.start()
-    # sync commands & start bot
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
     await bot.start(TOKEN)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())

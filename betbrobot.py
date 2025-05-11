@@ -343,7 +343,7 @@ async def resolvemod(interaction: discord.Interaction,
         embed.add_field(name="Score", value=score, inline=True)
         embed.add_field(name="Total Pot", value=f"${pot:.2f}", inline=False)
         embed.add_field(name="Commission (5%)", value=f"${commission:.2f}", inline=False)
-        embed.add_field(name="Payout", value=f="${payout:.2f}", inline=False)
+        embed.add_field(name="Payout", value=f"${payout:.2f}", inline=False)
         mch = bot.get_channel(MOD_RESULTS_CHANNEL_ID)
         if mch:
             await mch.send(embed=embed)
@@ -441,5 +441,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 bot.run(TOKEN)

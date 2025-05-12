@@ -67,11 +67,7 @@ def get_stats_rank(wins: int, coins: float) -> str:
     return "Rookie"
 
 # ---------- Events ----------
-@bot.event
-async def on_ready():
-    # Sync commands once ready
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"✅ Logged in as {bot.user}")
+
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -445,6 +441,13 @@ async def leaderboard(interaction: discord.Interaction, type: str):
         await interaction.response.send_message(f"{type.capitalize()} leaderboard posted.", ephemeral=True)
     except Exception:
         await interaction.response.send_message("❌ Error posting leaderboard.", ephemeral=True)
+
+@bot.event
+async def on_ready():
+    # Sync commands once ready
+    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+    print(f"✅ Logged in as {bot.user}")
+
 
 # ---------- Run ----------
 async def start_webserver():
